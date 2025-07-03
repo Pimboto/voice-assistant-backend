@@ -276,6 +276,125 @@
         .loading.show {
             display: block;
         }
+        
+        /* Waveform en tiempo real */
+        .waveform-container {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 100px;
+            pointer-events: none;
+            overflow: hidden;
+            background: linear-gradient(to top, rgba(0,255,136,0.05), transparent);
+        }
+        
+        .waveform-canvas {
+            width: 100%;
+            height: 100%;
+        }
+        
+        /* Efectos de neón en el orbe */
+        .orb-core.speaking {
+            animation: neonPulse 0.5s infinite alternate;
+            box-shadow: 
+                0 0 20px rgba(0, 255, 136, 0.8),
+                0 0 40px rgba(0, 255, 136, 0.6),
+                0 0 60px rgba(0, 255, 136, 0.4),
+                0 0 80px rgba(0, 255, 136, 0.2),
+                inset 0 0 40px rgba(0, 255, 136, 0.3);
+        }
+        
+        @keyframes neonPulse {
+            0% { 
+                box-shadow: 
+                    0 0 20px rgba(0, 255, 136, 0.8),
+                    0 0 40px rgba(0, 255, 136, 0.6),
+                    0 0 60px rgba(0, 255, 136, 0.4),
+                    inset 0 0 40px rgba(0, 255, 136, 0.3);
+            }
+            100% { 
+                box-shadow: 
+                    0 0 30px rgba(0, 255, 136, 1.0),
+                    0 0 60px rgba(0, 255, 136, 0.8),
+                    0 0 90px rgba(0, 255, 136, 0.6),
+                    0 0 120px rgba(0, 255, 136, 0.4),
+                    inset 0 0 50px rgba(0, 255, 136, 0.5);
+            }
+        }
+        
+        /* Indicador de volumen dinámico */
+        .volume-indicator {
+            position: absolute;
+            top: -40px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 100px;
+            height: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+            overflow: hidden;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        
+        .volume-bar {
+            height: 100%;
+            background: linear-gradient(to right, #00ff88, #ffff00, #ff4444);
+            width: 0%;
+            transition: width 0.1s ease;
+            border-radius: 4px;
+        }
+        
+        .orb-core.listening ~ .volume-indicator {
+            opacity: 1;
+        }
+        
+        /* Efecto de ondas concéntricas */
+        .orb-waves {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+        }
+        
+        .wave {
+            position: absolute;
+            border: 1px solid rgba(0, 255, 136, 0.3);
+            border-radius: 50%;
+            animation: waveExpand 2s linear infinite;
+        }
+        
+        @keyframes waveExpand {
+            0% {
+                width: 200px;
+                height: 200px;
+                margin: -100px;
+                opacity: 1;
+            }
+            100% {
+                width: 400px;
+                height: 400px;
+                margin: -200px;
+                opacity: 0;
+            }
+        }
+        
+        /* Texto con efecto typewriter mejorado */
+        .typewriter-cursor {
+            display: inline-block;
+            width: 2px;
+            height: 1.2em;
+            background: #00ff88;
+            animation: blink 1s infinite;
+            margin-left: 2px;
+        }
+        
+        @keyframes blink {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0; }
+        }
     </style>
 </head>
 <body>
@@ -294,6 +413,14 @@
             </div>
             <div class="orb-glow"></div>
             <div class="frequency-visualizer" id="freqVisualizer"></div>
+            <div class="volume-indicator">
+                <div class="volume-bar" id="volumeBar"></div>
+            </div>
+            <div class="orb-waves" id="orbWaves">
+                <div class="wave" style="animation-delay: 0s;"></div>
+                <div class="wave" style="animation-delay: 0.5s;"></div>
+                <div class="wave" style="animation-delay: 1s;"></div>
+            </div>
         </div>
         
         <div class="transcription-area" id="transcriptionArea">
@@ -329,7 +456,11 @@
     </div>
     
     <div class="tooltip">
-        Click para hablar • Optimizado para RTX 4060
+        Click para hablar • Espacio = Activar/Desactivar • Audio Cristalino 24kHz • Anti-Fragmentación
+    </div>
+
+    <div class="waveform-container">
+        <canvas class="waveform-canvas"></canvas>
     </div>
 
     <script>
@@ -372,6 +503,17 @@
             freqVisualizer.appendChild(bar);
         }
         const freqBars = document.querySelectorAll('.freq-bar');
+        
+        // Elementos para efectos avanzados
+        const volumeBar = document.getElementById('volumeBar');
+        const orbWaves = document.getElementById('orbWaves');
+        const waveformCanvas = document.querySelector('.waveform-canvas');
+        const waveformCtx = waveformCanvas.getContext('2d');
+        
+        // Variables para efectos avanzados
+        let waveformData = [];
+        let currentVolume = 0;
+        let speakingTimeout = null;
         
         // Sistema de partículas mejorado
         const particlesCanvas = document.getElementById('particles');
@@ -540,6 +682,10 @@
             const partialElements = document.querySelectorAll('.partial-text');
             partialElements.forEach(el => el.remove());
             
+            // Remover cursor anterior
+            const oldCursor = document.querySelector('.typewriter-cursor');
+            if (oldCursor) oldCursor.remove();
+            
             // Agregar palabras con animación
             const words = text.trim().split(' ');
             words.forEach((word, index) => {
@@ -549,6 +695,15 @@
                     wordSpan.textContent = word + ' ';
                     wordSpan.style.animationDelay = `${index * 50}ms`;
                     transcriptionText.appendChild(wordSpan);
+                    
+                    // Añadir cursor después de la última palabra
+                    if (index === words.length - 1) {
+                        setTimeout(() => {
+                            const cursor = document.createElement('span');
+                            cursor.className = 'typewriter-cursor';
+                            transcriptionText.appendChild(cursor);
+                        }, 300);
+                    }
                 }, index * 30);
             });
         }
@@ -581,66 +736,123 @@
                 
                 audioStream = await navigator.mediaDevices.getUserMedia({
                     audio: {
-                        sampleRate: 16000,
-                        channelCount: 1,
-                        echoCancellation: true,
-                        noiseSuppression: true,
-                        autoGainControl: true
+                        sampleRate: 24000,        // Exacto para Kyutai
+                        channelCount: 1,          // Mono para mejor compatibilidad
+                        echoCancellation: false,  // ❌ DESACTIVADO: Puede distorsionar
+                        noiseSuppression: false,  // ❌ DESACTIVADO: Puede quitar información útil
+                        autoGainControl: false,   // ❌ DESACTIVADO: Puede crear artifacts
+                        googEchoCancellation: false,
+                        googNoiseSuppression: false,
+                        googAutoGainControl: false,
+                        googHighpassFilter: false,
+                        latency: 0.02,           // 20ms latencia mínima
+                        volume: 1.0              // Volumen máximo
                     }
                 });
                 
+                console.log('✅ Stream obtenido, configurando AudioContext...');
+                
+                // AudioContext optimizado para claridad máxima
                 audioContext = new (window.AudioContext || window.webkitAudioContext)({
-                    sampleRate: 16000
+                    sampleRate: 24000,
+                    latencyHint: 'interactive'  // Mínima latencia
                 });
+                
+                // Asegurar que el contexto esté activo
+                if (audioContext.state === 'suspended') {
+                    await audioContext.resume();
+                }
                 
                 const source = audioContext.createMediaStreamSource(audioStream);
                 
-                // Analizador mejorado para visualización
+                // AnalyserNode para visualización (sin afectar audio)
                 analyser = audioContext.createAnalyser();
-                analyser.fftSize = 64;
-                analyser.smoothingTimeConstant = 0.2;
+                analyser.fftSize = 2048;
+                analyser.smoothingTimeConstant = 0.3;  // Reducido para mejor respuesta
                 dataArray = new Uint8Array(analyser.frequencyBinCount);
-                source.connect(analyser);
                 
-                // Procesador para envío (manteniendo lo que funciona)
-                const processor = audioContext.createScriptProcessor(1024, 1, 1);
-                
-                processor.onaudioprocess = (event) => {
-                    if (websocket && websocket.readyState === WebSocket.OPEN && isRecording) {
-                        const audioData = event.inputBuffer.getChannelData(0);
-                        const buffer = new ArrayBuffer(audioData.length * 4);
-                        const view = new Float32Array(buffer);
-                        view.set(audioData);
+                // AudioWorklet Processor optimizado
+                try {
+                    await audioContext.audioWorklet.addModule('data:text/javascript,' + 
+                        encodeURIComponent(`
+                            class CrystalClearProcessor extends AudioWorkletProcessor {
+                                process(inputs, outputs, parameters) {
+                                    const input = inputs[0];
+                                    if (input.length > 0) {
+                                        const channelData = input[0];
+                                        if (channelData.length > 0) {
+                                            // Sin procesamiento adicional - audio puro
+                                            const audioData = new Float32Array(channelData);
+                                            this.port.postMessage({
+                                                audioData: audioData,
+                                                sampleRate: sampleRate,
+                                                timestamp: currentTime
+                                            });
+                                        }
+                                    }
+                                    return true;
+                                }
+                            }
+                            registerProcessor('crystal-clear-processor', CrystalClearProcessor);
+                        `)
+                    );
+                    
+                    // Crear procesador
+                    const workletNode = new AudioWorkletNode(audioContext, 'crystal-clear-processor');
+                    
+                    workletNode.port.onmessage = (event) => {
+                        const { audioData, timestamp } = event.data;
+                        sendAudioData(audioData);
                         
-                        lastSendTime = Date.now();
-                        websocket.send(buffer);
-                        
-                        totalSamples += audioData.length;
-                        updateStats();
-                    }
-                };
-                
-                source.connect(processor);
-                processor.connect(audioContext.destination);
+                        // Actualizar stats en tiempo real
+                        updateRealtimeStats(audioData);
+                    };
+                    
+                    // Conectar: source → analyser → worklet
+                    source.connect(analyser);
+                    source.connect(workletNode);
+                    
+                    console.log('✅ AudioWorklet cristalino configurado');
+                    
+                } catch (e) {
+                    console.warn('⚠️ AudioWorklet no disponible, usando ScriptProcessor como fallback');
+                    
+                    // Fallback: ScriptProcessor optimizado
+                    const processor = audioContext.createScriptProcessor(2048, 1, 1);
+                    processor.onaudioprocess = (event) => {
+                        const inputBuffer = event.inputBuffer;
+                        const audioData = new Float32Array(inputBuffer.getChannelData(0));
+                        sendAudioData(audioData);
+                        updateRealtimeStats(audioData);
+                    };
+                    
+                    source.connect(analyser);
+                    source.connect(processor);
+                    processor.connect(audioContext.destination);
+                }
                 
                 isRecording = true;
-                startTime = Date.now();
-                orbCore.classList.add('listening');
                 loadingEl.classList.remove('show');
+                voiceOrb.classList.add('recording');
+                orbCore.classList.add('listening');
+                
+                // Inicializar estadísticas
+                startTime = Date.now();
+                totalSamples = 0;
                 
                 // Limpiar transcripción
                 transcriptionText.innerHTML = '';
                 wordCount = 0;
                 
-                // Iniciar visualización mejorada
+                console.log('✅ Grabación iniciada con audio cristalino');
+                
+                // Iniciar visualización
                 visualizeAudio();
                 
-                console.log('✅ Grabación iniciada');
-                
             } catch (error) {
-                console.error('❌ Error:', error);
+                console.error('❌ Error iniciando grabación:', error);
                 loadingEl.classList.remove('show');
-                alert(`Error al acceder al micrófono: ${error.message}`);
+                alert('Error accediendo al micrófono: ' + error.message);
             }
         }
         
@@ -667,7 +879,7 @@
             updateStats();
         }
         
-        // Visualización de audio mejorada
+        // Visualización de audio mejorada con efectos avanzados
         function visualizeAudio() {
             if (!isRecording || !analyser) return;
             
@@ -690,6 +902,10 @@
                     hsl(${hue + 30}, 100%, 70%))`;
             });
             
+            // 🚀 NUEVOS EFECTOS AVANZADOS
+            updateVolumeIndicator();
+            drawWaveform();
+            
             animationId = requestAnimationFrame(visualizeAudio);
         }
         
@@ -702,7 +918,7 @@
                 const wpm = Math.round((wordCount / elapsed) * 60);
                 document.getElementById('wpm').textContent = wpm;
                 
-                const bufferMs = Math.round((totalSamples / 16000) * 1000 - elapsed * 1000);
+                const bufferMs = Math.round((totalSamples / 24000) * 1000 - elapsed * 1000);
                 document.getElementById('bufferSize').textContent = `${Math.max(0, bufferMs)}ms`;
             }
         }
@@ -710,11 +926,40 @@
         // Event listeners
         voiceOrb.addEventListener('click', toggleRecording);
         
-        // Atajo de teclado
+        // Atajo de teclado mejorado con controles avanzados
         document.addEventListener('keydown', (e) => {
             if (e.code === 'Space' && !e.ctrlKey && !e.altKey && !e.shiftKey) {
                 e.preventDefault();
                 toggleRecording();
+            }
+            
+            // Controles avanzados
+            if (e.altKey && e.code === 'KeyW') {
+                // Alt + W: Toggle waveform
+                const waveformContainer = document.querySelector('.waveform-container');
+                waveformContainer.style.display = 
+                    waveformContainer.style.display === 'none' ? 'block' : 'none';
+                console.log('🌊 Waveform toggled');
+            }
+            
+            if (e.altKey && e.code === 'KeyP') {
+                // Alt + P: Toggle particles
+                particlesCanvas.style.display = 
+                    particlesCanvas.style.display === 'none' ? 'block' : 'none';
+                console.log('✨ Particles toggled');
+            }
+            
+            if (e.altKey && e.code === 'KeyN') {
+                // Alt + N: Toggle neon effects
+                document.body.classList.toggle('no-neon');
+                console.log('💡 Neon effects toggled');
+            }
+            
+            if (e.altKey && e.code === 'KeyS') {
+                // Alt + S: Show stats
+                const stats = document.getElementById('stats');
+                stats.style.display = stats.style.display === 'none' ? 'block' : 'none';
+                console.log('📊 Stats toggled');
             }
         });
         
@@ -749,6 +994,164 @@
                 }, 2000);
             }
         }, 3000);
+        
+        // Configurar canvas waveform
+        function resizeWaveformCanvas() {
+            waveformCanvas.width = window.innerWidth;
+            waveformCanvas.height = 100;
+        }
+        resizeWaveformCanvas();
+        window.addEventListener('resize', resizeWaveformCanvas);
+        
+        // Función para detectar voz y activar efectos
+        function detectSpeaking(volume) {
+            // Umbral para detectar voz (ajustable)
+            const speakingThreshold = 0.15;
+            
+            if (volume > speakingThreshold) {
+                orbCore.classList.add('speaking');
+                
+                // Crear ondas concéntricas
+                createWave();
+                
+                // Resetear timeout
+                clearTimeout(speakingTimeout);
+                speakingTimeout = setTimeout(() => {
+                    orbCore.classList.remove('speaking');
+                }, 500);
+            }
+        }
+        
+        // Crear ondas concéntricas dinámicas
+        function createWave() {
+            const wave = document.createElement('div');
+            wave.className = 'wave';
+            wave.style.animationDuration = '2s';
+            orbWaves.appendChild(wave);
+            
+            // Remover después de la animación
+            setTimeout(() => {
+                if (orbWaves.contains(wave)) {
+                    orbWaves.removeChild(wave);
+                }
+            }, 2000);
+        }
+        
+        // Función para dibujar waveform en tiempo real
+        function drawWaveform() {
+            if (!analyser || !isRecording) return;
+            
+            const bufferLength = analyser.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
+            analyser.getByteTimeDomainData(dataArray);
+            
+            // Agregar nuevos datos al historial
+            waveformData.push([...dataArray]);
+            
+            // Mantener solo los últimos datos (ancho de pantalla)
+            const maxPoints = Math.floor(waveformCanvas.width / 2);
+            if (waveformData.length > maxPoints) {
+                waveformData.shift();
+            }
+            
+            // Limpiar canvas
+            waveformCtx.clearRect(0, 0, waveformCanvas.width, waveformCanvas.height);
+            
+            // Dibujar waveform
+            waveformCtx.lineWidth = 2;
+            waveformCtx.strokeStyle = 'rgba(0, 255, 136, 0.8)';
+            waveformCtx.beginPath();
+            
+            const sliceWidth = waveformCanvas.width / waveformData.length;
+            let x = 0;
+            
+            for (let i = 0; i < waveformData.length; i++) {
+                const data = waveformData[i];
+                const average = data.reduce((a, b) => a + b) / data.length;
+                const y = (average / 255) * waveformCanvas.height;
+                
+                if (i === 0) {
+                    waveformCtx.moveTo(x, y);
+                } else {
+                    waveformCtx.lineTo(x, y);
+                }
+                
+                x += sliceWidth;
+            }
+            
+            waveformCtx.stroke();
+            
+            // Añadir efecto de resplandor
+            waveformCtx.shadowColor = '#00ff88';
+            waveformCtx.shadowBlur = 10;
+            waveformCtx.stroke();
+            waveformCtx.shadowBlur = 0;
+        }
+        
+        // Función para actualizar indicador de volumen
+        function updateVolumeIndicator() {
+            if (!analyser || !isRecording) return;
+            
+            const bufferLength = analyser.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
+            analyser.getByteFrequencyData(dataArray);
+            
+            // Calcular volumen promedio
+            const average = dataArray.reduce((a, b) => a + b) / bufferLength;
+            currentVolume = average / 255;
+            
+            // Actualizar barra de volumen
+            volumeBar.style.width = `${currentVolume * 100}%`;
+            
+            // Detectar si está hablando
+            detectSpeaking(currentVolume);
+        }
+        
+        // Función para enviar datos de audio optimizada
+        function sendAudioData(audioData) {
+            if (websocket && websocket.readyState === WebSocket.OPEN && isRecording) {
+                // Convertir a ArrayBuffer para envío eficiente
+                const buffer = new ArrayBuffer(audioData.length * 4);
+                const view = new Float32Array(buffer);
+                view.set(audioData);
+                
+                lastSendTime = Date.now();
+                websocket.send(buffer);
+                
+                totalSamples += audioData.length;
+            }
+        }
+        
+        // Función para actualizar estadísticas en tiempo real
+        function updateRealtimeStats(audioData) {
+            // Calcular nivel de audio para visualización
+            let sum = 0;
+            let max = 0;
+            for (let i = 0; i < audioData.length; i++) {
+                const abs = Math.abs(audioData[i]);
+                sum += abs * abs;
+                max = Math.max(max, abs);
+            }
+            
+            currentVolume = Math.sqrt(sum / audioData.length);
+            
+            // Actualizar visualizaciones
+            if (volumeBar) {
+                volumeBar.style.height = `${Math.min(100, currentVolume * 200)}%`;
+            }
+            
+            // Activar efectos visuales si hay voz
+            if (currentVolume > 0.01) {
+                orbCore.classList.add('speaking');
+                clearTimeout(speakingTimeout);
+                speakingTimeout = setTimeout(() => {
+                    orbCore.classList.remove('speaking');
+                }, 500);
+            }
+            
+            // Actualizar estadísticas
+            updateStats();
+        }
     </script>
 </body>
 </html>
