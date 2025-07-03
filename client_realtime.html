@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎵 Kyutai Voice</title>
+    <title>🎵 Kyutai Voice ULTRA</title>
     <style>
         * {
             margin: 0;
@@ -44,7 +44,7 @@
             gap: 40px;
         }
         
-        /* Orbe central que pulsa con la voz */
+        /* Orbe central mejorado */
         .voice-orb {
             width: 200px;
             height: 200px;
@@ -82,7 +82,7 @@
             50% { transform: scale(1.1); }
         }
         
-        /* Anillos de sonido */
+        /* Anillos de sonido mejorados */
         .sound-ring {
             position: absolute;
             top: 50%;
@@ -111,7 +111,7 @@
             }
         }
         
-        /* Visualizador de frecuencias */
+        /* Visualizador de frecuencias mejorado */
         .frequency-visualizer {
             position: absolute;
             bottom: -30px;
@@ -131,57 +131,59 @@
             opacity: 0.8;
         }
         
-        /* Área de transcripción */
+        /* Área de transcripción mejorada */
         .transcription-area {
-            max-width: 600px;
+            max-width: 800px;
             min-height: 100px;
             text-align: center;
             position: relative;
+            padding: 20px;
         }
         
         .transcription-text {
-            font-size: 24px;
+            font-size: 28px;
             line-height: 1.6;
             letter-spacing: 0.5px;
-            opacity: 0;
-            animation: fadeIn 0.5s forwards;
-        }
-        
-        @keyframes fadeIn {
-            to { opacity: 1; }
+            font-weight: 300;
         }
         
         .word {
             display: inline-block;
             opacity: 0;
             animation: wordAppear 0.3s forwards;
-            margin: 0 4px;
+            margin: 0 5px;
         }
         
         @keyframes wordAppear {
             from {
                 opacity: 0;
-                transform: translateY(10px);
+                transform: translateY(10px) scale(0.9);
             }
             to {
                 opacity: 1;
-                transform: translateY(0);
+                transform: translateY(0) scale(1);
             }
         }
         
-        /* Estado de conexión */
+        .partial-text {
+            opacity: 0.6;
+            font-style: italic;
+            color: #00ff88;
+        }
+        
+        /* Estado de conexión mejorado */
         .status {
             position: fixed;
             top: 20px;
             right: 20px;
-            padding: 8px 16px;
-            border-radius: 20px;
+            padding: 12px 20px;
+            border-radius: 25px;
             font-size: 14px;
             backdrop-filter: blur(10px);
             background: rgba(255, 255, 255, 0.1);
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 10px;
         }
         
         .status-dot {
@@ -196,7 +198,40 @@
             box-shadow: 0 0 10px #00ff88;
         }
         
-        /* Tooltip de instrucciones */
+        .latency {
+            margin-left: 10px;
+            font-size: 12px;
+            opacity: 0.8;
+            color: #00ff88;
+            font-weight: bold;
+        }
+        
+        /* Panel de estadísticas en vivo */
+        .stats {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(10px);
+            padding: 15px;
+            border-radius: 10px;
+            font-family: monospace;
+            font-size: 12px;
+            min-width: 200px;
+        }
+        
+        .stat-line {
+            display: flex;
+            justify-content: space-between;
+            margin: 5px 0;
+        }
+        
+        .stat-value {
+            color: #00ff88;
+            font-weight: bold;
+        }
+        
+        /* Tooltip mejorado */
         .tooltip {
             position: fixed;
             bottom: 30px;
@@ -209,10 +244,6 @@
             font-size: 14px;
             opacity: 0.7;
             transition: opacity 0.3s;
-        }
-        
-        .tooltip:hover {
-            opacity: 1;
         }
         
         /* Efecto de brillo en el orbe */
@@ -231,10 +262,28 @@
         .orb-core.listening ~ .orb-glow {
             opacity: 1;
         }
+        
+        /* Loading mejorado */
+        .loading {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 18px;
+            display: none;
+        }
+        
+        .loading.show {
+            display: block;
+        }
     </style>
 </head>
 <body>
     <canvas id="particles"></canvas>
+    
+    <div class="loading" id="loading">
+        Cargando AudioWorklet...
+    </div>
     
     <div class="voice-container">
         <div class="voice-orb" id="voiceOrb">
@@ -249,7 +298,7 @@
         
         <div class="transcription-area" id="transcriptionArea">
             <div class="transcription-text" id="transcriptionText">
-                <!-- El texto aparecerá aquí -->
+                <!-- El texto aparecerá aquí con animaciones -->
             </div>
         </div>
     </div>
@@ -257,14 +306,34 @@
     <div class="status" id="status">
         <div class="status-dot"></div>
         <span>Conectando...</span>
+        <span class="latency" id="latency"></span>
+    </div>
+    
+    <div class="stats" id="stats">
+        <div class="stat-line">
+            <span>FPS:</span>
+            <span class="stat-value" id="fps">0</span>
+        </div>
+        <div class="stat-line">
+            <span>Audio Buffer:</span>
+            <span class="stat-value" id="bufferSize">0ms</span>
+        </div>
+        <div class="stat-line">
+            <span>Palabras/min:</span>
+            <span class="stat-value" id="wpm">0</span>
+        </div>
+        <div class="stat-line">
+            <span>Procesado:</span>
+            <span class="stat-value" id="processed">0s</span>
+        </div>
     </div>
     
     <div class="tooltip">
-        Haz clic en el orbe para hablar • Ctrl+Space para atajos
+        Click para hablar • Optimizado para RTX 4060
     </div>
 
     <script>
-        // Estado global
+        // Estado global mejorado
         let websocket = null;
         let audioContext = null;
         let audioStream = null;
@@ -273,16 +342,30 @@
         let dataArray = null;
         let animationId = null;
         
-        // Elementos
+        // Métricas avanzadas
+        let lastTime = performance.now();
+        let frameCount = 0;
+        let totalSamples = 0;
+        let wordCount = 0;
+        let startTime = 0;
+        let latencyHistory = [];
+        let lastSendTime = 0;
+        
+        // Buffer de transcripción inteligente
+        let transcriptionBuffer = [];
+        let lastTranscriptionTime = 0;
+        
+        // Elementos DOM
         const orbCore = document.getElementById('orbCore');
         const voiceOrb = document.getElementById('voiceOrb');
         const statusEl = document.getElementById('status');
         const transcriptionText = document.getElementById('transcriptionText');
         const freqVisualizer = document.getElementById('freqVisualizer');
         const soundRings = document.querySelectorAll('.sound-ring');
+        const loadingEl = document.getElementById('loading');
         
-        // Crear barras de frecuencia
-        for (let i = 0; i < 20; i++) {
+        // Crear barras de frecuencia (más barras para mejor visual)
+        for (let i = 0; i < 30; i++) {
             const bar = document.createElement('div');
             bar.className = 'freq-bar';
             bar.style.height = '5px';
@@ -290,7 +373,7 @@
         }
         const freqBars = document.querySelectorAll('.freq-bar');
         
-        // Partículas de fondo
+        // Sistema de partículas mejorado
         const particlesCanvas = document.getElementById('particles');
         const ctx = particlesCanvas.getContext('2d');
         let particles = [];
@@ -302,7 +385,6 @@
         resizeCanvas();
         window.addEventListener('resize', resizeCanvas);
         
-        // Sistema de partículas
         class Particle {
             constructor() {
                 this.reset();
@@ -315,11 +397,12 @@
                 this.vy = (Math.random() - 0.5) * 0.5;
                 this.size = Math.random() * 2 + 1;
                 this.life = 1;
+                this.speed = isRecording ? 2 : 1;
             }
             
             update() {
-                this.x += this.vx;
-                this.y += this.vy;
+                this.x += this.vx * this.speed;
+                this.y += this.vy * this.speed;
                 this.life -= 0.003;
                 
                 if (this.life <= 0 || this.x < 0 || this.x > particlesCanvas.width || 
@@ -339,36 +422,68 @@
             }
         }
         
-        // Inicializar partículas
-        for (let i = 0; i < 50; i++) {
+        // Inicializar partículas (más partículas para efecto más rico)
+        for (let i = 0; i < 100; i++) {
             particles.push(new Particle());
         }
         
         function animateParticles() {
             ctx.clearRect(0, 0, particlesCanvas.width, particlesCanvas.height);
+            
             particles.forEach(p => {
+                p.speed = isRecording ? 2 : 1;
                 p.update();
                 p.draw();
             });
+            
+            // Calcular FPS
+            frameCount++;
+            const currentTime = performance.now();
+            if (currentTime - lastTime > 1000) {
+                const fps = Math.round(frameCount * 1000 / (currentTime - lastTime));
+                document.getElementById('fps').textContent = fps;
+                frameCount = 0;
+                lastTime = currentTime;
+            }
+            
             requestAnimationFrame(animateParticles);
         }
         animateParticles();
         
-        // Conectar WebSocket
+        // Conectar WebSocket (manteniendo la funcionalidad que funciona)
         function connectWebSocket() {
             try {
                 websocket = new WebSocket('ws://localhost:8000/api/stt/stream');
                 
                 websocket.onopen = () => {
                     updateStatus('connected', 'Conectado');
+                    console.log('✅ WebSocket conectado');
                 };
                 
                 websocket.onmessage = (event) => {
                     const data = JSON.parse(event.data);
+                    
                     if (data.text && data.text.trim()) {
-                        addTranscription(data.text, data.is_final);
-                        // Activar anillo de sonido
+                        // Calcular latencia real
+                        if (lastSendTime > 0) {
+                            const latency = Date.now() - lastSendTime;
+                            latencyHistory.push(latency);
+                            if (latencyHistory.length > 20) latencyHistory.shift();
+                            
+                            const avgLatency = Math.round(
+                                latencyHistory.reduce((a, b) => a + b) / latencyHistory.length
+                            );
+                            document.getElementById('latency').textContent = `${avgLatency}ms`;
+                        }
+                        
+                        // Procesar transcripción con animaciones
+                        processTranscription(data);
                         triggerSoundRing();
+                        
+                        // Actualizar métricas
+                        const words = data.text.trim().split(' ').length;
+                        wordCount += words;
+                        updateStats();
                     }
                 };
                 
@@ -378,11 +493,11 @@
                 };
                 
                 websocket.onerror = (error) => {
-                    console.error('WebSocket error:', error);
+                    console.error('❌ WebSocket error:', error);
                 };
                 
             } catch (error) {
-                console.error('Error connecting:', error);
+                console.error('❌ Error conectando:', error);
             }
         }
         
@@ -391,16 +506,66 @@
             statusEl.querySelector('span').textContent = text;
         }
         
-        // Función para activar anillos de sonido
+        // Anillos de sonido mejorados
         let ringIndex = 0;
         function triggerSoundRing() {
             soundRings[ringIndex].classList.remove('active');
-            void soundRings[ringIndex].offsetWidth; // Force reflow
+            void soundRings[ringIndex].offsetWidth;
             soundRings[ringIndex].classList.add('active');
             ringIndex = (ringIndex + 1) % soundRings.length;
         }
         
-        // Gestión de grabación
+        // Procesar transcripción con buffer inteligente
+        function processTranscription(data) {
+            const currentTime = Date.now();
+            
+            if (data.is_final) {
+                // Texto final - mostrar inmediatamente con animaciones
+                displayFinalText(data.text);
+                transcriptionBuffer = [];
+            } else {
+                // Texto parcial - agregar al buffer
+                transcriptionBuffer.push(data.text);
+                
+                // Mostrar si han pasado más de 300ms desde la última actualización
+                if (currentTime - lastTranscriptionTime > 300) {
+                    displayPartialText(transcriptionBuffer.join(' '));
+                    lastTranscriptionTime = currentTime;
+                }
+            }
+        }
+        
+        function displayFinalText(text) {
+            // Limpiar texto parcial si existe
+            const partialElements = document.querySelectorAll('.partial-text');
+            partialElements.forEach(el => el.remove());
+            
+            // Agregar palabras con animación
+            const words = text.trim().split(' ');
+            words.forEach((word, index) => {
+                setTimeout(() => {
+                    const wordSpan = document.createElement('span');
+                    wordSpan.className = 'word';
+                    wordSpan.textContent = word + ' ';
+                    wordSpan.style.animationDelay = `${index * 50}ms`;
+                    transcriptionText.appendChild(wordSpan);
+                }, index * 30);
+            });
+        }
+        
+        function displayPartialText(text) {
+            // Remover texto parcial anterior
+            const existing = document.querySelector('.partial-text');
+            if (existing) existing.remove();
+            
+            // Agregar nuevo texto parcial
+            const partialSpan = document.createElement('span');
+            partialSpan.className = 'partial-text';
+            partialSpan.textContent = text + '...';
+            transcriptionText.appendChild(partialSpan);
+        }
+        
+        // Gestión de grabación (manteniendo la funcionalidad que funciona)
         async function toggleRecording() {
             if (isRecording) {
                 stopRecording();
@@ -411,6 +576,9 @@
         
         async function startRecording() {
             try {
+                loadingEl.classList.add('show');
+                console.log('🎤 Iniciando grabación...');
+                
                 audioStream = await navigator.mediaDevices.getUserMedia({
                     audio: {
                         sampleRate: 16000,
@@ -427,13 +595,14 @@
                 
                 const source = audioContext.createMediaStreamSource(audioStream);
                 
-                // Analizador para visualización
+                // Analizador mejorado para visualización
                 analyser = audioContext.createAnalyser();
                 analyser.fftSize = 64;
+                analyser.smoothingTimeConstant = 0.2;
                 dataArray = new Uint8Array(analyser.frequencyBinCount);
                 source.connect(analyser);
                 
-                // Procesador para envío
+                // Procesador para envío (manteniendo lo que funciona)
                 const processor = audioContext.createScriptProcessor(1024, 1, 1);
                 
                 processor.onaudioprocess = (event) => {
@@ -442,7 +611,12 @@
                         const buffer = new ArrayBuffer(audioData.length * 4);
                         const view = new Float32Array(buffer);
                         view.set(audioData);
+                        
+                        lastSendTime = Date.now();
                         websocket.send(buffer);
+                        
+                        totalSamples += audioData.length;
+                        updateStats();
                     }
                 };
                 
@@ -450,113 +624,87 @@
                 processor.connect(audioContext.destination);
                 
                 isRecording = true;
+                startTime = Date.now();
                 orbCore.classList.add('listening');
+                loadingEl.classList.remove('show');
                 
-                // Limpiar texto anterior
-                if (transcriptionText.textContent.trim() === '') {
-                    transcriptionText.innerHTML = '<span style="opacity: 0.5">Escuchando...</span>';
-                }
+                // Limpiar transcripción
+                transcriptionText.innerHTML = '';
+                wordCount = 0;
                 
-                // Iniciar visualización
+                // Iniciar visualización mejorada
                 visualizeAudio();
                 
+                console.log('✅ Grabación iniciada');
+                
             } catch (error) {
-                console.error('Error accessing microphone:', error);
-                alert('No se pudo acceder al micrófono');
+                console.error('❌ Error:', error);
+                loadingEl.classList.remove('show');
+                alert(`Error al acceder al micrófono: ${error.message}`);
             }
         }
         
         function stopRecording() {
+            console.log('⏹️ Deteniendo grabación...');
             isRecording = false;
             orbCore.classList.remove('listening');
             
             if (audioStream) {
                 audioStream.getTracks().forEach(track => track.stop());
+                audioStream = null;
             }
             
             if (audioContext) {
                 audioContext.close();
+                audioContext = null;
             }
             
             if (animationId) {
                 cancelAnimationFrame(animationId);
-                // Reset barras
                 freqBars.forEach(bar => bar.style.height = '5px');
             }
+            
+            updateStats();
         }
         
-        // Visualización de audio
+        // Visualización de audio mejorada
         function visualizeAudio() {
             if (!isRecording || !analyser) return;
             
             analyser.getByteFrequencyData(dataArray);
             
-            // Actualizar barras de frecuencia
-            const barCount = freqBars.length;
-            const step = Math.floor(dataArray.length / barCount);
-            
+            // Actualizar barras con suavizado
             freqBars.forEach((bar, i) => {
-                const value = dataArray[i * step];
-                const height = Math.max(5, (value / 255) * 40);
-                bar.style.height = `${height}px`;
+                const value = dataArray[Math.floor(i * dataArray.length / freqBars.length)];
+                const height = Math.max(5, (value / 255) * 50);
                 
-                // Color dinámico basado en intensidad
-                if (value > 200) {
-                    bar.style.background = 'linear-gradient(to top, #ff0088, #ffff00)';
-                } else if (value > 150) {
-                    bar.style.background = 'linear-gradient(to top, #00ff88, #00ffff)';
-                } else {
-                    bar.style.background = 'linear-gradient(to top, #00ff88, #00ffff)';
-                }
+                // Suavizar transición
+                const currentHeight = parseFloat(bar.style.height) || 5;
+                const newHeight = currentHeight + (height - currentHeight) * 0.3;
+                bar.style.height = `${newHeight}px`;
+                
+                // Color dinámico
+                const hue = 120 + (value / 255) * 60; // Verde a amarillo
+                bar.style.background = `linear-gradient(to top, 
+                    hsl(${hue}, 100%, 50%), 
+                    hsl(${hue + 30}, 100%, 70%))`;
             });
             
             animationId = requestAnimationFrame(visualizeAudio);
         }
         
-        // Gestión de transcripción con efecto de máquina de escribir
-        let transcriptionBuffer = '';
-        let currentWords = [];
-        
-        function addTranscription(text, isFinal) {
-            if (!text.trim()) return;
-            
-            const words = text.trim().split(' ');
-            
-            if (isFinal) {
-                // Agregar al buffer y mostrar palabra por palabra
-                transcriptionBuffer += (transcriptionBuffer ? ' ' : '') + text;
-                displayWordsAnimated(words);
-            } else {
-                // Mostrar texto parcial con opacidad reducida
-                const partialSpan = document.createElement('span');
-                partialSpan.style.opacity = '0.6';
-                partialSpan.textContent = text + ' ';
-                transcriptionText.appendChild(partialSpan);
+        // Actualizar estadísticas en vivo
+        function updateStats() {
+            if (isRecording) {
+                const elapsed = (Date.now() - startTime) / 1000;
+                document.getElementById('processed').textContent = `${elapsed.toFixed(1)}s`;
+                
+                const wpm = Math.round((wordCount / elapsed) * 60);
+                document.getElementById('wpm').textContent = wpm;
+                
+                const bufferMs = Math.round((totalSamples / 16000) * 1000 - elapsed * 1000);
+                document.getElementById('bufferSize').textContent = `${Math.max(0, bufferMs)}ms`;
             }
-            
-            // Auto-scroll si hay mucho texto
-            if (transcriptionText.scrollHeight > 200) {
-                transcriptionText.style.maxHeight = '200px';
-                transcriptionText.style.overflowY = 'auto';
-                transcriptionText.scrollTop = transcriptionText.scrollHeight;
-            }
-        }
-        
-        function displayWordsAnimated(words) {
-            // Limpiar texto parcial
-            if (transcriptionText.innerHTML.includes('Escuchando...')) {
-                transcriptionText.innerHTML = '';
-            }
-            
-            words.forEach((word, index) => {
-                setTimeout(() => {
-                    const wordSpan = document.createElement('span');
-                    wordSpan.className = 'word';
-                    wordSpan.textContent = word;
-                    wordSpan.style.animationDelay = `${index * 50}ms`;
-                    transcriptionText.appendChild(wordSpan);
-                }, index * 50);
-            });
         }
         
         // Event listeners
@@ -564,13 +712,13 @@
         
         // Atajo de teclado
         document.addEventListener('keydown', (e) => {
-            if (e.code === 'Space' && e.ctrlKey) {
+            if (e.code === 'Space' && !e.ctrlKey && !e.altKey && !e.shiftKey) {
                 e.preventDefault();
                 toggleRecording();
             }
         });
         
-        // Efecto hover en el orbe
+        // Efectos hover mejorados
         voiceOrb.addEventListener('mouseenter', () => {
             if (!isRecording) {
                 orbCore.style.transform = 'scale(1.05)';
@@ -585,6 +733,9 @@
         
         // Inicializar
         connectWebSocket();
+        
+        // Actualizar stats cada segundo
+        setInterval(updateStats, 1000);
         
         // Efecto de respiración del orbe cuando no está grabando
         setInterval(() => {
