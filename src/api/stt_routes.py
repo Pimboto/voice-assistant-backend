@@ -1,4 +1,4 @@
-# src/api/stt_routes.py
+# src/api/stt_routes.py - VERSIÓN MEJORADA
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Request, HTTPException
 from fastapi import File, UploadFile
 from pydantic import BaseModel
@@ -8,7 +8,8 @@ import asyncio
 import time
 import io
 import soundfile as sf
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
+from collections import deque
 
 router = APIRouter()
 
@@ -18,52 +19,50 @@ class TranscriptionResponse(BaseModel):
     processing_time: float
     model: str
 
-@router.post("/transcribe")
-async def transcribe_audio(request: Request, file: UploadFile = File(...)):
-    """Endpoint REST para transcripción de audio"""
-    try:
-        # Obtener engine del estado de la aplicación
-        stt_engine = request.app.state.stt_engine
+class StreamingSession:
+    """Clase mejorada para manejar sesiones de streaming"""
+    def __init__(self):
+        self.start_time = time.time()
+        self.transcription_count = 0
+        self.words_buffer = deque(maxlen=50)  # Últimas 50 palabras
+        self.audio_buffer = []
+        self.last_activity = time.time()
+        self.silence_threshold = 2.0  # Reducido para mejor respuesta
+        self.current_sentence = []
+        self.last_final_text = ""
+        self.processing_lock = asyncio.Lock()
         
-        if not stt_engine or not stt_engine.is_ready:
-            raise HTTPException(status_code=503, detail="STT engine no está listo")
+        # Configuración optimizada para Kyutai
+        self.buffer_size = 12000  # 0.75 segundos a 16kHz
+        self.overlap_size = 4000  # 0.25 segundos de overlap
+        self.min_audio_level = 0.003  # Más sensible
         
-        # Leer archivo de audio
-        audio_data = await file.read()
+    def is_duplicate(self, text: str) -> bool:
+        """Verificar si el texto es duplicado con algoritmo mejorado"""
+        clean_text = text.strip().lower()
         
-        # Decodificar audio
-        audio_array, sample_rate = sf.read(io.BytesIO(audio_data))
-        
-        if len(audio_array) == 0:
-            raise HTTPException(status_code=400, detail="Audio vacío")
-        
-        # Transcribir
-        start_time = time.time()
-        transcription = await stt_engine.transcribe(audio_array, sample_rate)
-        processing_time = time.time() - start_time
-        
-        # Calcular confianza básica
-        confidence = _calculate_basic_confidence(audio_array, processing_time)
-        
-        # Obtener información del modelo
-        model_name = getattr(stt_engine, 'model_name', 'unknown')
-        
-        return TranscriptionResponse(
-            text=transcription,
-            confidence=confidence,
-            processing_time=processing_time,
-            model=model_name
-        )
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error en transcripción: {str(e)}")
+        # Verificar contra las últimas palabras
+        recent_text = ' '.join(self.words_buffer)
+        if clean_text in recent_text:
+            return True
+            
+        # Verificar similitud con último texto final
+        if self.last_final_text and clean_text in self.last_final_text.lower():
+            return True
+            
+        return False
+    
+    def update_words_buffer(self, text: str):
+        """Actualizar buffer de palabras"""
+        words = text.strip().split()
+        self.words_buffer.extend(words)
 
 @router.websocket("/stream")
 async def websocket_stt_stream(websocket: WebSocket):
-    """WebSocket para transcripción en tiempo real"""
+    """WebSocket mejorado para transcripción en tiempo real"""
     await websocket.accept()
     
-    # Obtener engine del estado de la aplicación  
+    # Obtener engine
     stt_engine = websocket.app.state.stt_engine
     
     if not stt_engine or not stt_engine.is_ready:
@@ -74,22 +73,11 @@ async def websocket_stt_stream(websocket: WebSocket):
         return
     
     print("🎤 Nueva sesión WebSocket iniciada")
-    
-    # Estado de la sesión
-    session_state = {
-        "start_time": time.time(),
-        "transcription_count": 0,
-        "words_sent": set(),  # Palabras ya enviadas para evitar duplicados
-        "last_activity": time.time(),
-        "silence_threshold": 3.0,  # Segundos de silencio para reset
-        "last_transcription": "",
-        "partial_text": "",
-        "audio_buffer": []  # Buffer para chunks de audio Float32
-    }
+    session = StreamingSession()
     
     try:
         while True:
-            # Recibir datos de audio
+            # Recibir datos
             message = await websocket.receive()
             
             if message["type"] == "websocket.disconnect":
@@ -100,135 +88,160 @@ async def websocket_stt_stream(websocket: WebSocket):
                 continue
             
             try:
-                # Los datos vienen como Float32Array desde ScriptProcessorNode
+                # Procesar audio Float32
                 audio_chunk = np.frombuffer(data, dtype=np.float32)
                 
                 if len(audio_chunk) == 0:
                     continue
                 
-                # Acumular chunks hasta tener suficiente para transcribir
-                session_state["audio_buffer"].extend(audio_chunk)
+                # Agregar al buffer con lock para evitar condiciones de carrera
+                async with session.processing_lock:
+                    session.audio_buffer.extend(audio_chunk)
                 
-                # Procesar cuando tengamos aproximadamente 0.5 segundos de audio (8000 samples) - optimizado para CUDA
-                if len(session_state["audio_buffer"]) >= 8000:  # Reducido para CUDA
-                    # Convertir lista a numpy array
-                    audio_array = np.array(session_state["audio_buffer"][:8000], dtype=np.float32)
+                # Procesar cuando tengamos suficiente audio
+                if len(session.audio_buffer) >= session.buffer_size:
+                    await process_audio_buffer(
+                        session, stt_engine, websocket
+                    )
                     
-                    # Detectar nivel de audio para gestión de silencio
-                    audio_level = float(np.sqrt(np.mean(audio_array**2)))  # Asegurar Python float
-                    current_time = time.time()
-                    
-                    if audio_level > 0.005:  # Umbral más sensible para mejor detección
-                        session_state["last_activity"] = current_time
-                        
-                        # Transcribir el chunk de audio con mejor manejo de errores
-                        try:
-                            transcription = await stt_engine.transcribe(audio_array, 16000)
-                            
-                            if transcription and len(transcription.strip()) > 0:
-                                # Procesar transcripción para evitar duplicados
-                                processed_result = _process_transcription_with_deduplication(
-                                    transcription, 
-                                    session_state,
-                                    audio_level
-                                )
-                                
-                                if processed_result:
-                                    # Enviar resultado
-                                    await websocket.send_text(json.dumps(processed_result))
-                                    session_state["transcription_count"] += 1
-                                    
-                                    print(f"📤 Enviado: '{processed_result['text']}' "
-                                          f"(final: {processed_result['is_final']}, "
-                                          f"conf: {processed_result['confidence']:.2f})")
-                        except Exception as transcribe_error:
-                            print(f"⚠️ Error en transcripción específica: {transcribe_error}")
-                            # No usar continue, solo registrar el error y continuar procesando
-                    
-                    else:
-                        # Silencio detectado
-                        silence_duration = current_time - session_state["last_activity"]
-                        
-                        if silence_duration > session_state["silence_threshold"]:
-                            # Reset por silencio prolongado
-                            if session_state["words_sent"] or session_state["partial_text"]:
-                                print("🔄 Reset por silencio prolongado")
-                                session_state["words_sent"].clear()
-                                session_state["partial_text"] = ""
-                                session_state["last_transcription"] = ""
-                    
-                    # Mantener overlap optimizado para CUDA (0.25 segundos)
-                    overlap_samples = 4000  # 0.25 segundos a 16kHz - más eficiente con CUDA
-                    session_state["audio_buffer"] = session_state["audio_buffer"][-overlap_samples:]
-            
             except Exception as e:
-                # Error más específico para debug
-                error_type = type(e).__name__
-                print(f"⚠️ Error procesando audio ({error_type}): {e}")
-                # No hacer continue aquí, continuar con el siguiente mensaje
+                print(f"⚠️ Error procesando chunk: {e}")
+                # Continuar con el siguiente chunk
                 
     except WebSocketDisconnect:
         pass
     except Exception as e:
         print(f"❌ Error en WebSocket: {e}")
     finally:
-        duration = time.time() - session_state["start_time"]
+        duration = time.time() - session.start_time
         print(f"🔚 Sesión terminada. Duración: {duration:.1f}s, "
-              f"Transcripciones: {session_state['transcription_count']}")
+              f"Transcripciones: {session.transcription_count}")
 
-def _process_transcription_with_deduplication(
-    transcription: str, 
-    session_state: Dict[str, Any], 
+async def process_audio_buffer(
+    session: StreamingSession, 
+    stt_engine: Any, 
+    websocket: WebSocket
+):
+    """Procesar buffer de audio con algoritmo mejorado"""
+    async with session.processing_lock:
+        # Tomar chunk del buffer
+        audio_array = np.array(
+            session.audio_buffer[:session.buffer_size], 
+            dtype=np.float32
+        )
+        
+        # Calcular nivel de audio (RMS)
+        audio_level = float(np.sqrt(np.mean(audio_array**2)))
+        current_time = time.time()
+        
+        if audio_level > session.min_audio_level:
+            # Audio detectado
+            session.last_activity = current_time
+            
+            try:
+                # Transcribir con el motor
+                transcription = await stt_engine.transcribe(audio_array, 16000)
+                
+                if transcription and len(transcription.strip()) > 0:
+                    # Procesar transcripción
+                    result = process_transcription_enhanced(
+                        transcription, session, audio_level
+                    )
+                    
+                    if result:
+                        # Enviar resultado
+                        await websocket.send_text(json.dumps(result))
+                        session.transcription_count += 1
+                        
+                        # Log para debug
+                        print(f"📤 Transcripción: '{result['text']}' "
+                              f"(final: {result['is_final']}, "
+                              f"confianza: {result['confidence']:.2f})")
+                        
+            except Exception as e:
+                print(f"⚠️ Error en transcripción: {e}")
+        
+        else:
+            # Silencio detectado
+            silence_duration = current_time - session.last_activity
+            
+            # Si hay una oración en curso y silencio prolongado, finalizarla
+            if (session.current_sentence and 
+                silence_duration > session.silence_threshold):
+                
+                final_text = ' '.join(session.current_sentence)
+                session.last_final_text = final_text
+                session.current_sentence = []
+                
+                result = {
+                    "text": final_text + ".",
+                    "is_final": True,
+                    "confidence": 0.9,
+                    "timestamp": current_time,
+                    "type": "sentence_end"
+                }
+                
+                await websocket.send_text(json.dumps(result))
+                print(f"📤 Oración completa: '{final_text}.'")
+        
+        # Mantener overlap para continuidad
+        session.audio_buffer = session.audio_buffer[-session.overlap_size:]
+
+def process_transcription_enhanced(
+    text: str, 
+    session: StreamingSession, 
     audio_level: float
 ) -> Optional[Dict[str, Any]]:
-    """Procesar transcripción con algoritmo avanzado de deduplicación"""
+    """Procesamiento mejorado de transcripción"""
     
-    # Limpiar y normalizar texto
-    clean_text = transcription.strip().lower()
-    
+    # Limpiar texto
+    clean_text = text.strip()
     if not clean_text or len(clean_text) < 2:
         return None
     
-    # Filtrar palabras de relleno comunes
-    filler_words = {"uh", "um", "er", "ah", "hmm", "like", "you know"}
-    words = clean_text.split()
-    filtered_words = [w for w in words if w not in filler_words]
-    
-    if not filtered_words:
+    # Verificar duplicados
+    if session.is_duplicate(clean_text):
         return None
     
-    # Convertir de vuelta a string original (con capitalización)
-    filtered_text = " ".join(filtered_words)
+    # Actualizar buffer de palabras
+    session.update_words_buffer(clean_text)
     
-    # Verificar si es substring de transcripción anterior (evitar duplicados)
-    if (session_state["last_transcription"] and 
-        filtered_text in session_state["last_transcription"].lower()):
-        return None
+    # Detectar si es final de oración
+    is_sentence_end = any(clean_text.endswith(p) for p in ['.', '?', '!'])
     
-    # Verificar si alguna palabra nueva no ha sido enviada
-    current_words = set(filtered_words)
-    new_words = current_words - session_state["words_sent"]
-    
-    if not new_words and not session_state["partial_text"]:
-        return None
-    
-    # Determinar si es transcripción final o parcial
-    is_final = len(filtered_text) > 10 or "." in transcription or "?" in transcription
-    
-    # Calcular confianza
-    confidence = _calculate_advanced_confidence(
-        transcription, audio_level, len(filtered_words), is_final
+    # Detectar pausas naturales (palabras que suelen terminar frases)
+    pause_indicators = [
+        'gracias', 'adiós', 'hola', 'bien', 'vale', 'okay', 
+        'sí', 'no', 'claro', 'perfecto', 'entendido'
+    ]
+    is_natural_pause = any(
+        word.lower() in pause_indicators 
+        for word in clean_text.split()[-2:]  # Últimas 2 palabras
     )
     
-    # Actualizar estado
+    # Determinar si es transcripción final
+    word_count = len(clean_text.split())
+    is_final = (
+        is_sentence_end or 
+        is_natural_pause or 
+        word_count > 8  # Frases largas se marcan como finales
+    )
+    
+    # Gestionar oraciones
     if is_final:
-        session_state["words_sent"].update(current_words)
-        session_state["last_transcription"] = filtered_text
-        session_state["partial_text"] = ""
-        result_text = transcription.strip()  # Mantener capitalización original
+        session.current_sentence.append(clean_text)
+        complete_sentence = ' '.join(session.current_sentence)
+        session.current_sentence = []
+        session.last_final_text = complete_sentence
+        result_text = complete_sentence
     else:
-        session_state["partial_text"] = filtered_text
-        result_text = transcription.strip()
+        session.current_sentence.append(clean_text)
+        result_text = clean_text
+    
+    # Calcular confianza mejorada
+    confidence = calculate_enhanced_confidence(
+        clean_text, audio_level, word_count, is_final
+    )
     
     return {
         "text": result_text,
@@ -236,62 +249,46 @@ def _process_transcription_with_deduplication(
         "confidence": confidence,
         "timestamp": time.time(),
         "audio_level": float(audio_level),
-        "word_count": len(filtered_words)
+        "word_count": word_count,
+        "type": "final" if is_final else "partial"
     }
 
-def _calculate_basic_confidence(audio_array: np.ndarray, processing_time: float) -> float:
-    """Calcular confianza básica para endpoint REST"""
-    try:
-        # Nivel de señal
-        rms = np.sqrt(np.mean(audio_array**2))
-        signal_strength = min(float(rms) * 5, 1.0)  # Convertir a Python float
-        
-        # Factor de velocidad de procesamiento
-        speed_factor = max(0.1, 1.0 - max(0, processing_time - 0.5) / 2.0)
-        
-        confidence = (signal_strength * 0.6 + speed_factor * 0.4)
-        return float(max(0.1, min(0.95, confidence)))  # Asegurar que sea Python float
-    except:
-        return 0.5
-
-def _calculate_advanced_confidence(
+def calculate_enhanced_confidence(
     text: str, 
     audio_level: float, 
     word_count: int, 
     is_final: bool
 ) -> float:
-    """Calcular confianza avanzada para streaming - optimizado y robusto"""
-    try:
-        # Asegurar que audio_level es Python float
-        audio_level = float(audio_level) if audio_level is not None else 0.0
-        word_count = int(word_count) if word_count is not None else 0
+    """Cálculo mejorado de confianza"""
+    
+    # Factor de nivel de audio (normalizado)
+    audio_factor = min(audio_level * 40, 1.0)
+    
+    # Factor de longitud
+    length_factor = min(word_count / 5.0, 1.0)
+    
+    # Factor de calidad del texto
+    quality_factor = 1.0
+    if text:
+        # Penalizar repeticiones
+        words = text.lower().split()
+        if len(words) > 1:
+            unique_ratio = len(set(words)) / len(words)
+            quality_factor = max(0.6, unique_ratio)
         
-        # Factor de nivel de audio (más sensible para CUDA)
-        audio_factor = min(audio_level * 30, 1.0)  # Más sensible con CUDA
-        
-        # Factor de longitud de texto
-        length_factor = min(word_count / 3.0, 1.0)  # Más rápido con buffers pequeños
-        
-        # Factor de finalidad
-        final_factor = 1.0 if is_final else 0.8  # Más confianza en parciales
-        
-        # Factor de calidad del texto (evitar repeticiones)
-        quality_factor = 1.0
-        if text and len(text.strip()) > 0:
-            words = text.lower().split()
-            if len(words) > 1:
-                unique_ratio = len(set(words)) / len(words)
-                quality_factor = max(0.5, unique_ratio)  # Más tolerante
-        
-        # Combinar factores (optimizado para CUDA)
-        confidence = (
-            audio_factor * 0.35 + 
-            length_factor * 0.25 + 
-            final_factor * 0.25 + 
-            quality_factor * 0.15
-        )
-        
-        return float(max(0.2, min(0.95, confidence)))  # Asegurar Python float
-    except Exception as e:
-        print(f"⚠️ Error calculando confianza: {e}")
-        return 0.6  # Confianza predeterminada más alta para CUDA
+        # Bonus por mayúsculas al inicio (indica inicio de oración)
+        if text[0].isupper():
+            quality_factor *= 1.1
+    
+    # Factor de finalidad
+    final_factor = 1.0 if is_final else 0.85
+    
+    # Combinar factores
+    confidence = (
+        audio_factor * 0.3 + 
+        length_factor * 0.2 + 
+        quality_factor * 0.3 + 
+        final_factor * 0.2
+    )
+    
+    return float(max(0.4, min(0.98, confidence)))

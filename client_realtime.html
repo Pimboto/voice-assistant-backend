@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎤 Kyutai STT - Voice AI</title>
+    <title>🎵 Kyutai Voice</title>
     <style>
         * {
             margin: 0;
@@ -12,304 +12,405 @@
         }
         
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #000;
+            color: #fff;
+            height: 100vh;
+            overflow: hidden;
             display: flex;
             align-items: center;
             justify-content: center;
-            color: white;
+            position: relative;
         }
         
-        .container {
-            max-width: 800px;
-            width: 90%;
-            background: rgba(255, 255, 255, 0.1);
-            backdrop-filter: blur(20px);
-            border-radius: 20px;
-            padding: 40px;
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
-            border: 1px solid rgba(255, 255, 255, 0.2);
+        /* Canvas de fondo para partículas */
+        #particles {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            opacity: 0.3;
         }
         
-        .title {
-            text-align: center;
-            font-size: 2.5rem;
-            font-weight: bold;
-            margin-bottom: 10px;
-            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        /* Contenedor principal */
+        .voice-container {
+            position: relative;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 40px;
         }
         
-        .subtitle {
-            text-align: center;
-            font-size: 1.1rem;
-            opacity: 0.9;
-            margin-bottom: 30px;
+        /* Orbe central que pulsa con la voz */
+        .voice-orb {
+            width: 200px;
+            height: 200px;
+            position: relative;
+            cursor: pointer;
+            transition: transform 0.3s ease;
         }
         
-        .status {
-            text-align: center;
-            padding: 15px;
-            border-radius: 10px;
-            margin-bottom: 30px;
-            font-weight: 500;
-            font-size: 1.1rem;
+        .voice-orb:hover {
+            transform: scale(1.05);
         }
         
-        .status.connected {
-            background: rgba(34, 197, 94, 0.2);
-            border: 2px solid rgba(34, 197, 94, 0.5);
-            color: #22c55e;
+        .orb-core {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background: radial-gradient(circle at 30% 30%, #00ff88, #0088ff);
+            box-shadow: 
+                0 0 60px rgba(0, 255, 136, 0.5),
+                inset 0 0 40px rgba(0, 136, 255, 0.3);
+            position: relative;
+            transition: all 0.3s ease;
         }
         
-        .status.recording {
-            background: rgba(239, 68, 68, 0.2);
-            border: 2px solid rgba(239, 68, 68, 0.5);
-            color: #ef4444;
+        .orb-core.listening {
             animation: pulse 1s infinite;
-        }
-        
-        .status.disconnected {
-            background: rgba(156, 163, 175, 0.2);
-            border: 2px solid rgba(156, 163, 175, 0.5);
-            color: #9ca3af;
+            background: radial-gradient(circle at 30% 30%, #00ff00, #00ff88);
+            box-shadow: 
+                0 0 100px rgba(0, 255, 0, 0.8),
+                inset 0 0 40px rgba(0, 255, 136, 0.5);
         }
         
         @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.7; }
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
         }
         
-        .controls {
+        /* Anillos de sonido */
+        .sound-ring {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 100%;
+            height: 100%;
+            border: 2px solid rgba(0, 255, 136, 0.5);
+            border-radius: 50%;
+            opacity: 0;
+            pointer-events: none;
+        }
+        
+        .sound-ring.active {
+            animation: ripple 1.5s ease-out;
+        }
+        
+        @keyframes ripple {
+            0% {
+                transform: translate(-50%, -50%) scale(1);
+                opacity: 1;
+            }
+            100% {
+                transform: translate(-50%, -50%) scale(2);
+                opacity: 0;
+            }
+        }
+        
+        /* Visualizador de frecuencias */
+        .frequency-visualizer {
+            position: absolute;
+            bottom: -30px;
+            left: 50%;
+            transform: translateX(-50%);
             display: flex;
-            justify-content: center;
-            gap: 20px;
-            margin-bottom: 30px;
+            gap: 3px;
+            height: 40px;
+            align-items: flex-end;
         }
         
-        .btn {
-            padding: 15px 30px;
-            border: none;
-            border-radius: 10px;
-            font-size: 1.1rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        .freq-bar {
+            width: 4px;
+            background: linear-gradient(to top, #00ff88, #00ffff);
+            border-radius: 2px;
+            transition: height 0.05s ease;
+            opacity: 0.8;
         }
         
-        .btn-start {
-            background: linear-gradient(45deg, #4ade80, #22c55e);
-            color: white;
+        /* Área de transcripción */
+        .transcription-area {
+            max-width: 600px;
+            min-height: 100px;
+            text-align: center;
+            position: relative;
         }
         
-        .btn-stop {
-            background: linear-gradient(45deg, #ef4444, #dc2626);
-            color: white;
-        }
-        
-        .btn-clear {
-            background: rgba(255, 255, 255, 0.2);
-            color: white;
-            border: 1px solid rgba(255, 255, 255, 0.3);
-        }
-        
-        .btn:hover:not(:disabled) {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
-        }
-        
-        .btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-            transform: none;
-        }
-        
-        .transcription-box {
-            background: rgba(0, 0, 0, 0.3);
-            border-radius: 15px;
-            padding: 25px;
-            min-height: 300px;
-            max-height: 400px;
-            overflow-y: auto;
-            border: 2px solid rgba(255, 255, 255, 0.1);
-            font-size: 1.2rem;
+        .transcription-text {
+            font-size: 24px;
             line-height: 1.6;
-            white-space: pre-wrap;
+            letter-spacing: 0.5px;
+            opacity: 0;
+            animation: fadeIn 0.5s forwards;
         }
         
-        .transcription-box.empty {
-            color: rgba(255, 255, 255, 0.6);
-            font-style: italic;
+        @keyframes fadeIn {
+            to { opacity: 1; }
+        }
+        
+        .word {
+            display: inline-block;
+            opacity: 0;
+            animation: wordAppear 0.3s forwards;
+            margin: 0 4px;
+        }
+        
+        @keyframes wordAppear {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        /* Estado de conexión */
+        .status {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            backdrop-filter: blur(10px);
+            background: rgba(255, 255, 255, 0.1);
             display: flex;
             align-items: center;
-            justify-content: center;
-            text-align: center;
+            gap: 8px;
         }
         
-        .loading {
-            display: none;
-            text-align: center;
-            margin-top: 15px;
-            color: rgba(255, 255, 255, 0.7);
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #666;
         }
         
-        .loading.show {
-            display: block;
+        .status.connected .status-dot {
+            background: #00ff88;
+            box-shadow: 0 0 10px #00ff88;
         }
         
-        .stats {
-            display: flex;
-            justify-content: space-around;
-            margin-top: 20px;
-            padding-top: 20px;
-            border-top: 1px solid rgba(255, 255, 255, 0.2);
+        /* Tooltip de instrucciones */
+        .tooltip {
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 12px 24px;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 30px;
+            font-size: 14px;
+            opacity: 0.7;
+            transition: opacity 0.3s;
         }
         
-        .stat {
-            text-align: center;
+        .tooltip:hover {
+            opacity: 1;
         }
         
-        .stat-number {
-            font-size: 1.5rem;
-            font-weight: bold;
-            color: #4ade80;
+        /* Efecto de brillo en el orbe */
+        .orb-glow {
+            position: absolute;
+            top: -20%;
+            left: -20%;
+            width: 140%;
+            height: 140%;
+            background: radial-gradient(circle, rgba(0, 255, 136, 0.2), transparent);
+            filter: blur(20px);
+            opacity: 0;
+            transition: opacity 0.3s;
         }
         
-        .stat-label {
-            font-size: 0.9rem;
-            opacity: 0.8;
-            margin-top: 5px;
-        }
-        
-        @media (max-width: 600px) {
-            .container {
-                margin: 20px;
-                padding: 20px;
-            }
-            
-            .title {
-                font-size: 2rem;
-            }
-            
-            .controls {
-                flex-direction: column;
-                align-items: center;
-            }
-            
-            .btn {
-                width: 100%;
-                max-width: 200px;
-            }
+        .orb-core.listening ~ .orb-glow {
+            opacity: 1;
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1 class="title">🎤 Kyutai Voice AI</h1>
-        <p class="subtitle">Transcripción en Tiempo Real con GPU RTX 4060</p>
-        
-        <div id="status" class="status disconnected">
-            Conectando al servidor...
-        </div>
-        
-        <div class="controls">
-            <button id="startBtn" class="btn btn-start" onclick="startRecording()">
-                🎤 Iniciar
-            </button>
-            <button id="stopBtn" class="btn btn-stop" onclick="stopRecording()" disabled>
-                ⏹️ Detener
-            </button>
-            <button id="clearBtn" class="btn btn-clear" onclick="clearTranscription()">
-                🗑️ Limpiar
-            </button>
-        </div>
-        
-        <div id="transcription" class="transcription-box empty">
-            Presiona "Iniciar" para comenzar la transcripción...
-        </div>
-        
-        <div id="loading" class="loading">
-            Procesando audio... 🎵
-        </div>
-        
-        <div class="stats">
-            <div class="stat">
-                <div class="stat-number" id="wordCount">0</div>
-                <div class="stat-label">Palabras</div>
+    <canvas id="particles"></canvas>
+    
+    <div class="voice-container">
+        <div class="voice-orb" id="voiceOrb">
+            <div class="orb-core" id="orbCore">
+                <div class="sound-ring"></div>
+                <div class="sound-ring"></div>
+                <div class="sound-ring"></div>
             </div>
-            <div class="stat">
-                <div class="stat-number" id="confidence">--</div>
-                <div class="stat-label">Precisión</div>
-            </div>
-            <div class="stat">
-                <div class="stat-number" id="sessions">0</div>
-                <div class="stat-label">Sesiones</div>
+            <div class="orb-glow"></div>
+            <div class="frequency-visualizer" id="freqVisualizer"></div>
+        </div>
+        
+        <div class="transcription-area" id="transcriptionArea">
+            <div class="transcription-text" id="transcriptionText">
+                <!-- El texto aparecerá aquí -->
             </div>
         </div>
     </div>
+    
+    <div class="status" id="status">
+        <div class="status-dot"></div>
+        <span>Conectando...</span>
+    </div>
+    
+    <div class="tooltip">
+        Haz clic en el orbe para hablar • Ctrl+Space para atajos
+    </div>
 
     <script>
+        // Estado global
         let websocket = null;
-        let mediaRecorder = null;
-        let audioStream = null;
         let audioContext = null;
+        let audioStream = null;
         let isRecording = false;
-        let sessionCount = 0;
-        let totalWords = 0;
-        let lastConfidence = 0;
+        let analyser = null;
+        let dataArray = null;
+        let animationId = null;
         
-        // Elementos DOM
+        // Elementos
+        const orbCore = document.getElementById('orbCore');
+        const voiceOrb = document.getElementById('voiceOrb');
         const statusEl = document.getElementById('status');
-        const startBtn = document.getElementById('startBtn');
-        const stopBtn = document.getElementById('stopBtn');
-        const transcriptionEl = document.getElementById('transcription');
-        const loadingEl = document.getElementById('loading');
-        const wordCountEl = document.getElementById('wordCount');
-        const confidenceEl = document.getElementById('confidence');
-        const sessionsEl = document.getElementById('sessions');
+        const transcriptionText = document.getElementById('transcriptionText');
+        const freqVisualizer = document.getElementById('freqVisualizer');
+        const soundRings = document.querySelectorAll('.sound-ring');
+        
+        // Crear barras de frecuencia
+        for (let i = 0; i < 20; i++) {
+            const bar = document.createElement('div');
+            bar.className = 'freq-bar';
+            bar.style.height = '5px';
+            freqVisualizer.appendChild(bar);
+        }
+        const freqBars = document.querySelectorAll('.freq-bar');
+        
+        // Partículas de fondo
+        const particlesCanvas = document.getElementById('particles');
+        const ctx = particlesCanvas.getContext('2d');
+        let particles = [];
+        
+        function resizeCanvas() {
+            particlesCanvas.width = window.innerWidth;
+            particlesCanvas.height = window.innerHeight;
+        }
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+        
+        // Sistema de partículas
+        class Particle {
+            constructor() {
+                this.reset();
+            }
+            
+            reset() {
+                this.x = Math.random() * particlesCanvas.width;
+                this.y = Math.random() * particlesCanvas.height;
+                this.vx = (Math.random() - 0.5) * 0.5;
+                this.vy = (Math.random() - 0.5) * 0.5;
+                this.size = Math.random() * 2 + 1;
+                this.life = 1;
+            }
+            
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.life -= 0.003;
+                
+                if (this.life <= 0 || this.x < 0 || this.x > particlesCanvas.width || 
+                    this.y < 0 || this.y > particlesCanvas.height) {
+                    this.reset();
+                }
+            }
+            
+            draw() {
+                ctx.save();
+                ctx.globalAlpha = this.life * 0.5;
+                ctx.fillStyle = isRecording ? '#00ff88' : '#0088ff';
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+        
+        // Inicializar partículas
+        for (let i = 0; i < 50; i++) {
+            particles.push(new Particle());
+        }
+        
+        function animateParticles() {
+            ctx.clearRect(0, 0, particlesCanvas.width, particlesCanvas.height);
+            particles.forEach(p => {
+                p.update();
+                p.draw();
+            });
+            requestAnimationFrame(animateParticles);
+        }
+        animateParticles();
         
         // Conectar WebSocket
         function connectWebSocket() {
             try {
                 websocket = new WebSocket('ws://localhost:8000/api/stt/stream');
                 
-                websocket.onopen = function() {
-                    updateStatus('connected', '✅ Conectado - Listo para grabar');
+                websocket.onopen = () => {
+                    updateStatus('connected', 'Conectado');
                 };
                 
-                websocket.onmessage = function(event) {
+                websocket.onmessage = (event) => {
                     const data = JSON.parse(event.data);
-                    
                     if (data.text && data.text.trim()) {
-                        addTranscription(data.text, data.is_final, data.confidence);
-                        loadingEl.classList.remove('show');
+                        addTranscription(data.text, data.is_final);
+                        // Activar anillo de sonido
+                        triggerSoundRing();
                     }
                 };
                 
-                websocket.onclose = function() {
-                    updateStatus('disconnected', '❌ Desconectado');
+                websocket.onclose = () => {
+                    updateStatus('disconnected', 'Desconectado');
+                    setTimeout(connectWebSocket, 3000);
                 };
                 
-                websocket.onerror = function(error) {
+                websocket.onerror = (error) => {
                     console.error('WebSocket error:', error);
-                    updateStatus('disconnected', '❌ Error de conexión');
                 };
                 
             } catch (error) {
                 console.error('Error connecting:', error);
-                updateStatus('disconnected', '❌ No se pudo conectar');
             }
         }
         
-        function updateStatus(type, message) {
-            statusEl.className = `status ${type}`;
-            statusEl.textContent = message;
+        function updateStatus(state, text) {
+            statusEl.className = `status ${state}`;
+            statusEl.querySelector('span').textContent = text;
+        }
+        
+        // Función para activar anillos de sonido
+        let ringIndex = 0;
+        function triggerSoundRing() {
+            soundRings[ringIndex].classList.remove('active');
+            void soundRings[ringIndex].offsetWidth; // Force reflow
+            soundRings[ringIndex].classList.add('active');
+            ringIndex = (ringIndex + 1) % soundRings.length;
+        }
+        
+        // Gestión de grabación
+        async function toggleRecording() {
+            if (isRecording) {
+                stopRecording();
+            } else {
+                startRecording();
+            }
         }
         
         async function startRecording() {
             try {
-                // Solicitar micrófono
                 audioStream = await navigator.mediaDevices.getUserMedia({
                     audio: {
                         sampleRate: 16000,
@@ -320,159 +421,183 @@
                     }
                 });
                 
-                // Usar AudioContext + ScriptProcessorNode (compatible con backend)
                 audioContext = new (window.AudioContext || window.webkitAudioContext)({
                     sampleRate: 16000
                 });
                 
                 const source = audioContext.createMediaStreamSource(audioStream);
                 
-                // ScriptProcessorNode para datos Float32Array
+                // Analizador para visualización
+                analyser = audioContext.createAnalyser();
+                analyser.fftSize = 64;
+                dataArray = new Uint8Array(analyser.frequencyBinCount);
+                source.connect(analyser);
+                
+                // Procesador para envío
                 const processor = audioContext.createScriptProcessor(1024, 1, 1);
                 
-                processor.onaudioprocess = function(event) {
+                processor.onaudioprocess = (event) => {
                     if (websocket && websocket.readyState === WebSocket.OPEN && isRecording) {
-                        const inputBuffer = event.inputBuffer;
-                        const audioData = inputBuffer.getChannelData(0); // Float32Array
-                        
-                        // Convertir a ArrayBuffer y enviar
+                        const audioData = event.inputBuffer.getChannelData(0);
                         const buffer = new ArrayBuffer(audioData.length * 4);
                         const view = new Float32Array(buffer);
                         view.set(audioData);
-                        
                         websocket.send(buffer);
-                        loadingEl.classList.add('show');
                     }
                 };
                 
                 source.connect(processor);
                 processor.connect(audioContext.destination);
-                mediaRecorder = processor; // Para cleanup
                 
                 isRecording = true;
-                sessionCount++;
-                updateStats();
+                orbCore.classList.add('listening');
                 
-                updateStatus('recording', '🔴 Grabando - Habla ahora');
-                startBtn.disabled = true;
-                stopBtn.disabled = false;
-                
-                // Limpiar transcripción si está vacía
-                if (transcriptionEl.classList.contains('empty')) {
-                    transcriptionEl.textContent = '';
-                    transcriptionEl.classList.remove('empty');
+                // Limpiar texto anterior
+                if (transcriptionText.textContent.trim() === '') {
+                    transcriptionText.innerHTML = '<span style="opacity: 0.5">Escuchando...</span>';
                 }
+                
+                // Iniciar visualización
+                visualizeAudio();
                 
             } catch (error) {
                 console.error('Error accessing microphone:', error);
-                
-                let errorMsg = 'Error al acceder al micrófono';
-                if (error.name === 'NotAllowedError') {
-                    errorMsg = 'Permisos de micrófono denegados';
-                } else if (error.name === 'NotFoundError') {
-                    errorMsg = 'No se encontró micrófono';
-                }
-                
-                alert(errorMsg);
-                updateStatus('disconnected', `❌ ${errorMsg}`);
+                alert('No se pudo acceder al micrófono');
             }
         }
         
         function stopRecording() {
             isRecording = false;
+            orbCore.classList.remove('listening');
             
-            if (mediaRecorder) {
-                mediaRecorder.disconnect();
+            if (audioStream) {
+                audioStream.getTracks().forEach(track => track.stop());
             }
             
             if (audioContext) {
                 audioContext.close();
             }
             
-            if (audioStream) {
-                audioStream.getTracks().forEach(track => track.stop());
+            if (animationId) {
+                cancelAnimationFrame(animationId);
+                // Reset barras
+                freqBars.forEach(bar => bar.style.height = '5px');
             }
-            
-            loadingEl.classList.remove('show');
-            updateStatus('connected', '✅ Conectado - Listo para grabar');
-            startBtn.disabled = false;
-            stopBtn.disabled = true;
         }
         
-        function addTranscription(text, isFinal, confidence) {
+        // Visualización de audio
+        function visualizeAudio() {
+            if (!isRecording || !analyser) return;
+            
+            analyser.getByteFrequencyData(dataArray);
+            
+            // Actualizar barras de frecuencia
+            const barCount = freqBars.length;
+            const step = Math.floor(dataArray.length / barCount);
+            
+            freqBars.forEach((bar, i) => {
+                const value = dataArray[i * step];
+                const height = Math.max(5, (value / 255) * 40);
+                bar.style.height = `${height}px`;
+                
+                // Color dinámico basado en intensidad
+                if (value > 200) {
+                    bar.style.background = 'linear-gradient(to top, #ff0088, #ffff00)';
+                } else if (value > 150) {
+                    bar.style.background = 'linear-gradient(to top, #00ff88, #00ffff)';
+                } else {
+                    bar.style.background = 'linear-gradient(to top, #00ff88, #00ffff)';
+                }
+            });
+            
+            animationId = requestAnimationFrame(visualizeAudio);
+        }
+        
+        // Gestión de transcripción con efecto de máquina de escribir
+        let transcriptionBuffer = '';
+        let currentWords = [];
+        
+        function addTranscription(text, isFinal) {
             if (!text.trim()) return;
             
-            const currentText = transcriptionEl.textContent;
-            const isEmpty = transcriptionEl.classList.contains('empty') || 
-                           currentText === 'Presiona "Iniciar" para comenzar la transcripción...';
+            const words = text.trim().split(' ');
             
-            let newText;
-            if (isEmpty) {
-                newText = text;
+            if (isFinal) {
+                // Agregar al buffer y mostrar palabra por palabra
+                transcriptionBuffer += (transcriptionBuffer ? ' ' : '') + text;
+                displayWordsAnimated(words);
             } else {
-                newText = currentText + ' ' + text;
+                // Mostrar texto parcial con opacidad reducida
+                const partialSpan = document.createElement('span');
+                partialSpan.style.opacity = '0.6';
+                partialSpan.textContent = text + ' ';
+                transcriptionText.appendChild(partialSpan);
             }
             
-            transcriptionEl.textContent = newText;
-            transcriptionEl.classList.remove('empty');
+            // Auto-scroll si hay mucho texto
+            if (transcriptionText.scrollHeight > 200) {
+                transcriptionText.style.maxHeight = '200px';
+                transcriptionText.style.overflowY = 'auto';
+                transcriptionText.scrollTop = transcriptionText.scrollHeight;
+            }
+        }
+        
+        function displayWordsAnimated(words) {
+            // Limpiar texto parcial
+            if (transcriptionText.innerHTML.includes('Escuchando...')) {
+                transcriptionText.innerHTML = '';
+            }
             
-            // Auto-scroll
-            transcriptionEl.scrollTop = transcriptionEl.scrollHeight;
-            
-            // Actualizar estadísticas
-            if (confidence) {
-                lastConfidence = confidence;
-            }
-            updateWordCount();
-            updateStats();
+            words.forEach((word, index) => {
+                setTimeout(() => {
+                    const wordSpan = document.createElement('span');
+                    wordSpan.className = 'word';
+                    wordSpan.textContent = word;
+                    wordSpan.style.animationDelay = `${index * 50}ms`;
+                    transcriptionText.appendChild(wordSpan);
+                }, index * 50);
+            });
         }
         
-        function updateWordCount() {
-            const text = transcriptionEl.textContent;
-            if (text && !transcriptionEl.classList.contains('empty')) {
-                const words = text.trim().split(/\s+/).filter(w => w.length > 0);
-                totalWords = words.length;
-                wordCountEl.textContent = totalWords;
-            }
-        }
+        // Event listeners
+        voiceOrb.addEventListener('click', toggleRecording);
         
-        function updateStats() {
-            wordCountEl.textContent = totalWords;
-            confidenceEl.textContent = lastConfidence ? Math.round(lastConfidence * 100) + '%' : '--';
-            sessionsEl.textContent = sessionCount;
-        }
-        
-        function clearTranscription() {
-            transcriptionEl.textContent = 'Presiona "Iniciar" para comenzar la transcripción...';
-            transcriptionEl.classList.add('empty');
-            totalWords = 0;
-            updateStats();
-        }
-        
-        // Inicializar al cargar
-        window.onload = function() {
-            connectWebSocket();
-            updateStats();
-        };
-        
-        // Reconectar automáticamente
-        setInterval(() => {
-            if (!websocket || websocket.readyState === WebSocket.CLOSED) {
-                connectWebSocket();
-            }
-        }, 5000);
-        
-        // Atajos de teclado
-        document.addEventListener('keydown', function(e) {
+        // Atajo de teclado
+        document.addEventListener('keydown', (e) => {
             if (e.code === 'Space' && e.ctrlKey) {
                 e.preventDefault();
-                if (isRecording) {
-                    stopRecording();
-                } else {
-                    startRecording();
-                }
+                toggleRecording();
             }
         });
+        
+        // Efecto hover en el orbe
+        voiceOrb.addEventListener('mouseenter', () => {
+            if (!isRecording) {
+                orbCore.style.transform = 'scale(1.05)';
+            }
+        });
+        
+        voiceOrb.addEventListener('mouseleave', () => {
+            if (!isRecording) {
+                orbCore.style.transform = 'scale(1)';
+            }
+        });
+        
+        // Inicializar
+        connectWebSocket();
+        
+        // Efecto de respiración del orbe cuando no está grabando
+        setInterval(() => {
+            if (!isRecording) {
+                orbCore.style.transform = 'scale(1.02)';
+                setTimeout(() => {
+                    orbCore.style.transform = 'scale(0.98)';
+                }, 1000);
+                setTimeout(() => {
+                    orbCore.style.transform = 'scale(1)';
+                }, 2000);
+            }
+        }, 3000);
     </script>
 </body>
-</html> 
+</html>
